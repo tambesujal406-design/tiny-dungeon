@@ -1,5 +1,6 @@
 # Tiny Dungeon
 ![Tiny Dungeon gameplay](docs/screenshot.png)
+
 A tiny turn-based pixel dungeon crawler in Game Boy green. Grab the key, dodge the slimes, outsmart the ghosts, and reach the door. It is a single HTML file with no dependencies, no build step, and no audio files.
 
 **[Play it live](https://tambesujal406-design.github.io/tiny-dungeon/)**
