@@ -1,0 +1,19 @@
+{
+  "name": "tiny-dungeon",
+  "version": "1.1.0",
+  "description": "A tiny turn-based pixel dungeon crawler in Game Boy green. One HTML file, no dependencies.",
+  "private": true,
+  "license": "MIT",
+  "author": "Sujal Tambe",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tambesujal406-design/tiny-dungeon.git"
+  },
+  "homepage": "https://tambesujal406-design.github.io/tiny-dungeon/",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "check": "node scripts/check-levels.mjs"
+  },
+  "keywords": ["game", "pixel-art", "dungeon", "html5", "web-audio", "github-pages"]
+}

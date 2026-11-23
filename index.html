@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tiny Dungeon</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#cadc9f;--fg:#0f380f;--sub:#306230;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1f0b;--fg:#9bbc0f;--sub:#6f8f1c;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0b1f0b;--fg:#9bbc0f;--sub:#6f8f1c;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:"Press Start 2P",monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+canvas{width:min(94vw,432px);aspect-ratio:144/160;image-rendering:pixelated;border:4px solid var(--fg);display:block}
+button{font:8px "Press Start 2P",monospace;color:var(--fg);background:none;border:3px solid var(--fg);padding:10px 12px;cursor:pointer}
+.row{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;padding:0 12px}
+#wrap{position:relative;line-height:0}
+#wrap.crt canvas{filter:contrast(1.1) saturate(1.15)}
+#wrap.crt::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(to bottom,rgba(0,0,0,.3) 0 1px,transparent 1px 3px),radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.5) 100%)}
+button:focus-visible{outline:3px solid var(--sub);outline-offset:2px}
+p{margin:0;font-size:8px;line-height:1.8;color:var(--sub);text-align:center;padding:0 12px}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="g"></canvas></div>
+<p>Swipe or use arrow keys to move.<br>Tap or press space to wait.<br>Hearts heal you.</p>
+<div class="row"><button id="m" type="button"></button><button id="t" type="button"></button><button id="f" type="button"></button></div>
+<script>
+const c=document.getElementById('g'),x=c.getContext('2d');
+const W=144,H=160,T=16,OY=16;c.width=W;c.height=H;
+const C=['#0f380f','#306230','#8bac0f','#9bbc0f'];
+const LV=[
+['#########','#@..#...#','#...#.k.#','#.......#','#.###.###','#.....#.#','#.###...#','#...#..D#','#########'],
+['#########','#@......#','#.......#','#..###..#','#.h...k.#','#.......#','#..###..#','#......D#','#########'],
+['#########','#@..#..k#','#...#...#','#.v.#.v.#','#...#...#','#.......#','#.#...#.#','#.#...#D#','#########'],
+['#########','#@......#','#.#.#.#.#','#...k...#','#.#.#.#.#','#.......#','#.#.#.#.#','#c.....D#','#########'],
+['#########','#@.h....#','#.......#','#.##.##.#','#...k...#','#.##.##.#','#.......#','#....v.D#','#########'],
+['#########','#@......#','#.......#','#.#####.#','#...k.h.#','#.#####.#','#.......#','#+.....D#','#########'],
+['#########','#@......#','#.#.#.#.#','#...h...#','#.#.#k#.#','#.......#','#.#.#.#.#','#c....#D#','#########'],
+['#########','#@.v...k#','#.......#','#.......#','#....v..#','#.......#','#.......#','#+.....D#','#########'],
+['#########','#c.....c#','#.#.#.#.#','#...@...#','#.#.#.#.#','#...k...#','#.#.#.#.#','#+.....D#','#########'],
+['#########','#@..#.v.#','#...#...#','#.h.#.k.#','#...#...#','#.......#','#.#...#.#','#.#.c.#D#','#########']];
+const S={
+p:['..0000..','.011110.','.010010.','.011110.','.000000.','0.0000.0','..0000..','..0..0..'],
+s:['........','..0000..','.011110.','01011010','01111110','00000000','........','........'],
+c:['..0000..','.011110.','01011010','01111110','01111110','01100110','01000010','........'],
+h:['.00..00.','00000000','00000000','00000000','.000000.','..0000..','...00...','........'],
+k:['..000...','.0..0...','.0..0...','..000...','...0....','...00...','...0....','...00...'],
+d:['.000000.','01111110','01100110','01100110','01111010','01111110','01111110','00000000'],
+w:['11111101','11111101','00000000','10111111','10111111','00000000','11111011','11111011']};
+const PAL={'0':C[0],'1':C[1],'2':C[2],'3':C[3]};
+function sp(r,px,py,pal){pal=pal||PAL;r.forEach((row,j)=>[...row].forEach((ch,i)=>{if(pal[ch]){x.fillStyle=pal[ch];x.fillRect(px+i*2,py+j*2,2,2)}}))}
+let li=0,deaths=0,hp=3,st='title',tm=0,key=false,turn=0,pl,mons,map,fr=0,sh=0,ps=[];
+function load(){
+  map=LV[li].map(r=>[...r]);mons=[];key=false;turn=0;
+  map.forEach((r,y)=>r.forEach((ch,i)=>{
+    if(ch==='@'){pl={x:i,y,rx:i,ry:y};r[i]='.'}
+    else if('hvc'.includes(ch)){mons.push({x:i,y,rx:i,ry:y,t:ch,d:1});r[i]='.'}
+  }));
+}
+load();
+const free=(a,b)=>map[b][a]!=='#'&&map[b][a]!=='D';
+function stepM(m){
+  if(m.t==='c'){
+    if(turn%2)return;
+    const dx=pl.x-m.x,dy=pl.y-m.y;
+    const o=Math.abs(dx)>=Math.abs(dy)?[[Math.sign(dx),0],[0,Math.sign(dy)]]:[[0,Math.sign(dy)],[Math.sign(dx),0]];
+    for(const [a,b] of o){if((a||b)&&free(m.x+a,m.y+b)){m.x+=a;m.y+=b;return}}
+    return;
+  }
+  const h=m.t==='h';
+  if(free(m.x+(h?m.d:0),m.y+(h?0:m.d))){m.x+=h?m.d:0;m.y+=h?0:m.d}
+  else{m.d=-m.d;if(free(m.x+(h?m.d:0),m.y+(h?0:m.d))){m.x+=h?m.d:0;m.y+=h?0:m.d}}
+}
+function boom(a,b,col){for(let i=0;i<10;i++)ps.push({x:a*T+8,y:OY+b*T+8,vx:Math.random()*3-1.5,vy:Math.random()*3-1.5,l:20+(Math.random()*10|0),c:col})}
+function die(){deaths++;hp--;sh=8;boom(pl.x,pl.y,C[0]);if(hp<=0){st='over';tm=40}else{st='dead';tm=36}}
+function go(dx,dy){
+  if(st==='title'){st='play';return}
+  if(st==='win'||st==='over'){if(tm>0)return;li=0;hp=3;deaths=0;load();st='play';return}
+  if(st!=='play')return;
+  const ox=pl.x,oy=pl.y,nx=ox+dx,ny=oy+dy;
+  if(dx||dy){
+    const t=map[ny][nx];
+    if(t==='D'&&key){pl.x=nx;pl.y=ny;st='next';tm=40;return}
+    if(t!=='#'&&t!=='D'){pl.x=nx;pl.y=ny;if(t==='k'){key=true;map[ny][nx]='.';boom(nx,ny,C[1])}if(t==='+'&&hp<3){hp++;map[ny][nx]='.';boom(nx,ny,C[1])}}
+  }
+  if(mons.some(m=>m.x===pl.x&&m.y===pl.y))return die();
+  turn++;
+  const old=mons.map(m=>({x:m.x,y:m.y}));
+  mons.forEach(stepM);
+  if(mons.some((m,i)=>(m.x===pl.x&&m.y===pl.y)||(m.x===ox&&m.y===oy&&old[i].x===pl.x&&old[i].y===pl.y)))die();
+}
+let ac,mg,nz,music=false,muted=false,nextT=0,stp=0;
+try{muted=localStorage.getItem('td-muted')==='1'}catch(e){}
+const CH=[[220,261.63,329.63,440],[174.61,220,261.63,349.23],[261.63,329.63,392,523.25],[164.81,207.65,246.94,329.63]];
+const BS=[110,87.31,130.81,82.41],AR=[0,1,2,3,2,1,2,1];
+function tone(f,t,d,ty,v){const o=ac.createOscillator(),g=ac.createGain();o.type=ty;o.frequency.value=f;g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g);g.connect(mg);o.start(t);o.stop(t+d+.02)}
+function hat(t){const s=ac.createBufferSource(),g=ac.createGain();s.buffer=nz;g.gain.setValueAtTime(.25,t);g.gain.exponentialRampToValueAtTime(.001,t+.04);s.connect(g);g.connect(mg);s.start(t)}
+function sched(){while(nextT<ac.currentTime+.25){const b=(stp>>3)&3,s=stp&7;tone(CH[b][AR[s]],nextT,.2,'square',.5);if(s%4===0)tone(BS[b],nextT,.5,'triangle',1);if(s===6)tone(BS[b]*2,nextT,.2,'triangle',.7);if(s&1)hat(nextT);stp++;nextT+=.3125}}
+function startMusic(){
+  if(muted)return;
+  try{
+    if(!ac){ac=new(window.AudioContext||window.webkitAudioContext)();mg=ac.createGain();mg.gain.value=.1;mg.connect(ac.destination);nz=ac.createBuffer(1,2205,ac.sampleRate);const d=nz.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1}
+    if(ac.state==='suspended')ac.resume();
+    if(!music){music=true;nextT=ac.currentTime+.1;setInterval(sched,100)}
+  }catch(e){}
+}
+['pointerup','keydown','touchend'].forEach(ev=>addEventListener(ev,startMusic));
+const mb=document.getElementById('m');
+function lab(){mb.textContent='Music: '+(muted?'off':'on')}
+lab();
+mb.addEventListener('pointerdown',e=>e.stopPropagation());
+mb.addEventListener('pointerup',e=>e.stopPropagation());
+mb.addEventListener('click',()=>{muted=!muted;try{localStorage.setItem('td-muted',muted?'1':'0')}catch(e){}lab();if(muted){if(ac)ac.suspend()}else startMusic();mb.blur()});
+const TH=[
+{n:'Classic',c:['#0f380f','#306230','#8bac0f','#9bbc0f']},
+{n:'Neon',c:['#8ff7ff','#b43cff','#2a1458','#120826'],p:['#0a0418','#8ff7ff','#b43cff']},
+{n:'Blood',c:['#f2e3c4','#c0392b','#3b0d0d','#12060a'],p:['#0a0305','#f2e3c4','#c0392b']},
+{n:'Amber',c:['#ffb000','#a35f00','#2b1a00','#0a0600'],p:['#050300','#ffb000','#a35f00']},
+{n:'Ice',c:['#0b2a4a','#4a90d9','#bfe3ff','#e8f6ff'],p:['#cfe9ff','#0b2a4a','#2f6aa8']}];
+let ti=0,crt=false;
+try{ti=+localStorage.getItem('td-theme')||0;crt=localStorage.getItem('td-crt')==='1'}catch(e){}
+if(!TH[ti])ti=0;
+const tb=document.getElementById('t'),fb=document.getElementById('f'),wr=document.getElementById('wrap'),rs=document.documentElement.style;
+function look(){
+  const t=TH[ti];t.c.forEach((v,j)=>{C[j]=v;PAL[j]=v});
+  ['--bg','--fg','--sub'].forEach((k,j)=>t.p?rs.setProperty(k,t.p[j]):rs.removeProperty(k));
+  wr.classList.toggle('crt',crt);
+  tb.textContent='Look: '+t.n;fb.textContent='CRT: '+(crt?'on':'off');
+}
+look();
+[tb,fb].forEach(b=>{b.addEventListener('pointerdown',e=>e.stopPropagation());b.addEventListener('pointerup',e=>e.stopPropagation())});
+tb.addEventListener('click',()=>{ti=(ti+1)%TH.length;try{localStorage.setItem('td-theme',ti)}catch(e){}look();tb.blur()});
+fb.addEventListener('click',()=>{crt=!crt;try{localStorage.setItem('td-crt',crt?'1':'0')}catch(e){}look();fb.blur()});
+let sx0=0,sy0=0;
+addEventListener('pointerdown',e=>{sx0=e.clientX;sy0=e.clientY});
+addEventListener('pointerup',e=>{
+  const dx=e.clientX-sx0,dy=e.clientY-sy0;
+  if(Math.hypot(dx,dy)<24)go(0,0);
+  else if(Math.abs(dx)>Math.abs(dy))go(Math.sign(dx),0);
+  else go(0,Math.sign(dy));
+});
+const KM={ArrowLeft:[-1,0],KeyA:[-1,0],ArrowRight:[1,0],KeyD:[1,0],ArrowUp:[0,-1],KeyW:[0,-1],ArrowDown:[0,1],KeyS:[0,1],Space:[0,0]};
+addEventListener('keydown',e=>{const k=KM[e.code];if(k){e.preventDefault();go(k[0],k[1])}});
+function update(){
+  fr++;if(sh>0)sh--;[pl,...mons].forEach(e=>{e.rx+=(e.x-e.rx)*.35;e.ry+=(e.y-e.ry)*.35});ps.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.l--});ps=ps.filter(p=>p.l>0);
+  if(tm>0&&--tm===0){
+    if(st==='dead'){load();st='play'}
+    else if(st==='next'){li++;if(li>=LV.length)st='win';else{load();st='play'}}
+  }
+}
+function draw(){
+  x.save();
+  if(sh>0)x.translate(Math.round(Math.random()*4-2),Math.round(Math.random()*4-2));
+  x.fillStyle=C[3];x.fillRect(-4,-4,W+8,H+8);
+  const bob=(fr>>5)&1;
+  for(let y=0;y<9;y++)for(let i=0;i<9;i++){
+    const t=map[y][i],px=i*T,py=OY+y*T;
+    if(t==='#')sp(S.w,px,py);
+    else{
+      if((i*7+y*3)%5===0){x.fillStyle=C[2];x.fillRect(px+7,py+7,2,2)}
+      if(t==='k')sp(S.k,px,py+bob*2);
+      if(t==='D')sp(S.d,px,py,{'0':C[0],'1':key?C[3]:C[1]});
+      if(t==='+')sp(S.h,px,py+bob*2,{'0':C[0]});
+    }
+  }
+  mons.forEach(m=>sp(S[m.t==='c'?'c':'s'],Math.round(m.rx*T),OY+Math.round(m.ry*T)+bob*2));
+  if(st!=='dead'&&st!=='over')sp(S.p,Math.round(pl.rx*T),OY+Math.round(pl.ry*T)+bob*2);
+  ps.forEach(p=>{x.fillStyle=p.c;x.fillRect(p.x|0,p.y|0,2,2)});
+  x.fillStyle=C[0];x.fillRect(0,0,W,OY);
+  x.font='8px "Press Start 2P",monospace';x.textBaseline='top';x.fillStyle=C[3];
+  x.textAlign='left';x.fillText('LV '+(li+1)+'/'+LV.length,4,4);
+  for(let i=0;i<3;i++)sp(S.h,W-52+i*16,0,{'0':i<hp?C[3]:C[1]});
+  if(key)sp(S.k,72,0,{'0':C[3]});
+  x.textAlign='center';
+  if(st==='next'){x.fillStyle=C[0];x.fillRect(0,64,W,24);x.fillStyle=C[3];x.fillText('ROOM CLEAR',W/2,72)}
+  if(st==='win'){
+    x.fillStyle=C[0];x.fillRect(0,40,W,72);x.fillStyle=C[3];
+    x.fillText('YOU ESCAPED',W/2,52);x.fillText('DEATHS '+deaths,W/2,72);
+    if((fr>>4)&1)x.fillText('TAP TO REPLAY',W/2,92);
+  }
+  if(st==='title'){x.fillStyle=C[0];x.fillRect(0,40,W,80);x.fillStyle=C[3];x.fillText('TINY',W/2,52);x.fillText('DUNGEON',W/2,68);if((fr>>4)&1)x.fillText('TAP TO START',W/2,96)}
+  if(st==='over'){x.fillStyle=C[0];x.fillRect(0,48,W,64);x.fillStyle=C[3];x.fillText('GAME OVER',W/2,60);x.fillText('ROOM '+(li+1),W/2,76);if(tm===0&&(fr>>4)&1)x.fillText('TAP TO RETRY',W/2,96)}
+  x.restore();
+}
+function loop(){update();draw();requestAnimationFrame(loop)}
+loop();
+</script>
+</body>
+</html>
